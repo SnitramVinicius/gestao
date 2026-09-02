@@ -1,0 +1,9 @@
+import {env} from 'cloudflare:workers';
+import type {D1Database,R2Bucket} from '@cloudflare/workers-types';
+import {identity,AppError} from '@/lib/workspace-validation';
+const bindings=()=>env as unknown as {DB?:D1Database;FILES?:R2Bucket};
+export async function context(req:Request){const tenant=identity(req);const db=bindings().DB;if(!db)throw new AppError(503,'Banco de dados indisponível. Tente novamente em instantes.');await db.prepare('INSERT OR IGNORE INTO companies (id,name,mode,version) VALUES (?,?,?,1)').bind(tenant,'Minha empresa','customer').run();return {tenant,db};}
+export function files(){const bucket=bindings().FILES;if(!bucket)throw new AppError(503,'Armazenamento de fotos indisponível.');return bucket;}
+export function json(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});}
+export function failure(error:unknown){if(error instanceof AppError)return json({error:error.message},error.status);const message=String(error);if(message.includes('booking_overlap'))return json({error:'Esse horário conflita com outro agendamento. Escolha outro horário.'},409);if(message.includes('photo_limit'))return json({error:'O pedido já tem 5 fotos.'},409);if(message.includes('customers.tenant, customers.phone'))return json({error:'Já existe um cliente com esse telefone.'},409);console.error('Workspace operation failed',error instanceof Error?error.name:'Error');return json({error:'Não foi possível concluir. Seus campos foram mantidos; tente novamente.'},500);}
+export async function readJson(req:Request){if(!req.headers.get('content-type')?.includes('application/json'))throw new AppError(415,'Envie dados JSON.');const body=await req.text();if(body.length>24000)throw new AppError(413,'Dados muito grandes.');try{return JSON.parse(body)}catch{throw new AppError(400,'Dados inválidos.');}}
