@@ -14,7 +14,7 @@ export function LoginScreen(){
    <p className="login-story-footer">Órbita · Gestão para o dia a dia</p>
   </section>
   <section className="login-access" aria-labelledby="login-title"><div className="login-card">
-   <span className="login-lock"><LockKeyhole aria-hidden="true" size={22}/></span><p className="login-eyebrow">ACESSE SUA EMPRESA</p><AuthForm/>
+   <span className="login-lock"><LockKeyhole aria-hidden="true" size={22}/></span><p className="login-eyebrow">ACESSE SUA EMPRESA</p><a className="demo-entry" href="/demonstracao">Entrar sem login<ArrowRight size={18} aria-hidden="true"/></a><p className="demo-entry-note">Acesso de demonstração. As alterações são temporárias e somem ao recarregar.</p><AuthForm/>
   </div><p className="login-footer">Seu negócio, em movimento.</p></section>
  </main>;
 }
