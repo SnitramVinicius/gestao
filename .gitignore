@@ -39,3 +39,9 @@ next-env.d.ts
 
 /tests/.local-fixture.json
 *.tsbuildinfo
+
+.next/
+.netlify/
+!.env.example
+
+migration/private/

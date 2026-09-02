@@ -1,38 +1,34 @@
 import {storedSettings} from '@/lib/company-settings';
 import {validateSettings,configuredSchedule} from '@/lib/company-validation';
-import {context,json,failure,readJson} from '@/db/runtime';
-import {AppError,mutationOrigin,object,text,version,mode,customer,address,orderStatus,schedule} from '@/lib/workspace-validation';
-import {resolveVisit,type AttendanceMode,type Address} from '@/lib/customer-rules';
+import {context,json,failure,readJson,checked,changed} from '@/db/runtime';
+import {AppError,mutationOrigin,object,text,version,mode,customer,address,orderStatus} from '@/lib/workspace-validation';
+import {resolveVisit} from '@/lib/customer-rules';
 export const dynamic='force-dynamic';
-function parseAddress(value:unknown):Address|undefined{return typeof value==='string'?JSON.parse(value):undefined;}
 export async function GET(req:Request){try{
  const {db,tenant}=await context(req);
- const company=await db.prepare('SELECT id,name,mode,version,settings,logo_key FROM companies WHERE id=?').bind(tenant).first();
- const [clients,orders,bookings,photos,audit]=await Promise.all([
- db.prepare('SELECT id,name,phone,address,version,created_at FROM customers WHERE tenant=? ORDER BY created_at DESC').bind(tenant).all(),
- db.prepare('SELECT * FROM orders WHERE tenant=? ORDER BY created_at DESC').bind(tenant).all(),
- db.prepare('SELECT * FROM bookings WHERE tenant=? ORDER BY date,time').bind(tenant).all(),
- db.prepare('SELECT id,order_id,name,mime,size FROM photos WHERE tenant=? ORDER BY created_at').bind(tenant).all(),
- db.prepare('SELECT id,entity,entity_id,action,created_at FROM audit WHERE tenant=? ORDER BY id DESC LIMIT 20').bind(tenant).all()]);
- return json({company:company?{id:company.id,name:company.name,mode:company.mode,version:company.version,settings:storedSettings(company.settings),hasLogo:!!company.logo_key}:null,clients:clients.results.map(c=>({id:c.id,name:c.name,phone:c.phone,address:parseAddress(c.address),version:c.version,createdAt:c.created_at})),orders:orders.results.map(o=>({id:o.id,customerId:o.customer_id,service:o.service,description:o.description,measurements:o.measurements,responsible:o.responsible,address:parseAddress(o.address),status:o.status,version:o.version,createdAt:o.created_at,updatedAt:o.updated_at})),bookings:bookings.results.map(b=>({id:b.id,client:b.customer_id,date:b.date,time:b.time,duration:b.duration,kind:b.kind,location:b.location,address:parseAddress(b.address),status:b.status,version:b.version})),photos:photos.results.map(p=>({id:p.id,orderId:p.order_id,name:p.name,mime:p.mime,size:p.size})),audit:audit.results.map(a=>({id:a.id,entity:a.entity,entityId:a.entity_id,action:a.action,createdAt:a.created_at}))});
- }catch(error){return failure(error);}}
+ const company=checked(await db.from('companies').select('*').eq('id',tenant).single());
+ const [cr,or,br,pr,ar]=await Promise.all([
+ db.from('customers').select('*').eq('tenant',tenant).order('created_at',{ascending:false}),
+ db.from('orders').select('*').eq('tenant',tenant).order('created_at',{ascending:false}),
+ db.from('bookings').select('*').eq('tenant',tenant).order('date').order('time'),
+ db.from('photos').select('id,order_id,name,mime,size').eq('tenant',tenant).order('created_at'),
+ db.from('audit').select('*').eq('tenant',tenant).order('id',{ascending:false}).limit(20)]);
+ return json({company:{id:company.id,name:company.name,mode:company.mode,version:company.version,settings:storedSettings(company.settings),hasLogo:!!company.logo_key},
+ clients:checked(cr).map(c=>({id:c.id,name:c.name,phone:c.phone,address:c.address,version:c.version,createdAt:c.created_at})),
+ orders:checked(or).map(o=>({id:o.id,customerId:o.customer_id,service:o.service,description:o.description,measurements:o.measurements,responsible:o.responsible,address:o.address,status:o.status,version:o.version,createdAt:o.created_at,updatedAt:o.updated_at})),
+ bookings:checked(br).map(b=>({id:b.id,client:b.customer_id,date:b.date,time:b.time,duration:b.duration,kind:b.kind,location:b.location,address:b.address,status:b.status,version:b.version})),
+ photos:checked(pr).map(p=>({id:p.id,orderId:p.order_id,name:p.name,mime:p.mime,size:p.size})),audit:checked(ar).map(a=>({id:a.id,entity:a.entity,entityId:a.entity_id,action:a.action,createdAt:a.created_at}))});
+ }catch(e){return failure(e);}}
 export async function POST(req:Request){try{
- mutationOrigin(req);const input=object(await readJson(req));const operation=text(input.operation,40,true);const p=object(input.payload);
- const {db,tenant}=await context(req);const company=await db.prepare('SELECT mode,settings,version FROM companies WHERE id=?').bind(tenant).first<{mode:AttendanceMode;settings:string|null;version:number}>();if(!company)throw new AppError(404,'Empresa não encontrada.');
- const now=new Date().toISOString();let changed:number|undefined;let id:string|undefined;
- if(operation==='saveCompany'){const name=text(p.name,100,true);const attendance=mode(p.mode);const settings=validateSettings(p.settings);const result=await db.prepare('UPDATE companies SET name=?,mode=?,settings=?,version=version+1 WHERE id=? AND version=?').bind(name,attendance,JSON.stringify(settings),tenant,version(p.version)).run();changed=result.meta.changes;}
- else if(operation==='saveClient'){const c=customer(p,company.mode);id=p.id?text(p.id,80,true):crypto.randomUUID();if(p.id){const result=await db.prepare('UPDATE customers SET name=?,phone=?,address=?,version=version+1 WHERE id=? AND tenant=? AND version=?').bind(c.name,c.phone,c.address?JSON.stringify(c.address):null,id,tenant,version(p.version)).run();changed=result.meta.changes;}else{await db.prepare('INSERT INTO customers (id,tenant,name,phone,address,created_at) VALUES (?,?,?,?,?,?)').bind(id,tenant,c.name,c.phone,c.address?JSON.stringify(c.address):null,now).run();}}
- else if(operation==='saveOrder'){
- const customerId=text(p.customerId,80,true);const c=await db.prepare('SELECT id,address FROM customers WHERE id=? AND tenant=?').bind(customerId,tenant).first();if(!c)throw new AppError(404,'Cliente não encontrado.');
- const a=address(p.address,company.mode==='customer');const service=text(p.service,120,true),description=text(p.description,3000,true),measurements=text(p.measurements,1000),responsible=text(p.responsible,100),status=orderStatus(p.status);
- id=p.id?text(p.id,80,true):crypto.randomUUID();
- if(p.id){const result=await db.prepare('UPDATE orders SET customer_id=?,service=?,description=?,measurements=?,responsible=?,address=?,status=?,updated_at=?,version=version+1 WHERE id=? AND tenant=? AND version=?').bind(customerId,service,description,measurements,responsible,a?JSON.stringify(a):null,status,now,id,tenant,version(p.version)).run();changed=result.meta.changes;}
- else{await db.prepare('INSERT INTO orders (id,tenant,customer_id,service,description,measurements,responsible,address,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id,tenant,customerId,service,description,measurements,responsible,a?JSON.stringify(a):null,status,now,now).run();}
- }
- else if(operation==='setOrderStatus'){const result=await db.prepare('UPDATE orders SET status=?,updated_at=?,version=version+1 WHERE id=? AND tenant=? AND version=?').bind(orderStatus(p.status),now,text(p.id,80,true),tenant,version(p.version)).run();changed=result.meta.changes;}
- else if(operation==='createBooking'){const customerId=text(p.client,80,true);const c=await db.prepare('SELECT address FROM customers WHERE id=? AND tenant=?').bind(customerId,tenant).first();if(!c)throw new AppError(404,'Cliente não encontrado.');if(p.companyVersion!==undefined&&version(p.companyVersion)!==company.version)throw new AppError(409,'Configurações alteradas. Atualize a agenda.');const s=configuredSchedule(p,storedSettings(company.settings));let visit;try{visit=resolveVisit(company.mode,text(p.location,20),parseAddress(c.address));}catch(error){throw new AppError(400,error instanceof Error?error.message:'Endereço inválido.');}id=crypto.randomUUID();const result=await db.prepare('INSERT INTO bookings (id,tenant,customer_id,date,time,start_minute,duration,kind,location,address,status) SELECT ?,?,?,?,?,?,?,?,?,?,? FROM companies WHERE id=? AND version=?').bind(id,tenant,customerId,s.date,s.time,s.startMinute,s.duration,s.kind,visit.location,visit.address?JSON.stringify(visit.address):null,'Pendente',tenant,company.version).run();changed=result.meta.changes;}
- else if(operation==='setBookingStatus'){const status=text(p.status,20,true);if(!['Confirmado','Concluído','Cancelado'].includes(status))throw new AppError(400,'Status inválido.');const result=await db.prepare(`UPDATE bookings SET status=?,version=version+1 WHERE id=? AND tenant=? AND version=? AND ((status='Pendente' AND ? IN ('Confirmado','Cancelado')) OR (status='Confirmado' AND ? IN ('Concluído','Cancelado')))`).bind(status,text(p.id,80,true),tenant,version(p.version),status,status).run();changed=result.meta.changes;}
+ mutationOrigin(req);const input=object(await readJson(req)),operation=text(input.operation,40,true),p=object(input.payload);
+ const {db,tenant}=await context(req);const company=checked(await db.from('companies').select('*').eq('id',tenant).single());let id:string|undefined;
+ if(operation==='saveCompany'){const v=version(p.version);changed(checked(await db.from('companies').update({name:text(p.name,100,true),mode:mode(p.mode),settings:validateSettings(p.settings),version:v+1}).eq('id',tenant).eq('version',v).select('id')));}
+ else if(operation==='saveClient'){const c=customer(p,company.mode);id=p.id?text(p.id,80,true):crypto.randomUUID();const values={name:c.name,phone:c.phone,address:c.address??null};if(p.id){const v=version(p.version);changed(checked(await db.from('customers').update({...values,version:v+1}).eq('tenant',tenant).eq('id',id).eq('version',v).select('id')));}else checked(await db.from('customers').insert({...values,id,tenant}));}
+ else if(operation==='saveOrder'){const customerId=text(p.customerId,80,true);const c=checked(await db.from('customers').select('id').eq('tenant',tenant).eq('id',customerId).maybeSingle());if(!c)throw new AppError(404,'Cliente não encontrado.');id=p.id?text(p.id,80,true):crypto.randomUUID();const values={customer_id:customerId,service:text(p.service,120,true),description:text(p.description,3000,true),measurements:text(p.measurements,1000),responsible:text(p.responsible,100),address:address(p.address,company.mode==='customer')??null,status:orderStatus(p.status),updated_at:new Date().toISOString()};
+ if(p.id){const v=version(p.version);changed(checked(await db.from('orders').update({...values,version:v+1}).eq('tenant',tenant).eq('id',id).eq('version',v).select('id')));}else checked(await db.from('orders').insert({...values,id,tenant}));}
+ else if(operation==='setOrderStatus'){const v=version(p.version);changed(checked(await db.from('orders').update({status:orderStatus(p.status),version:v+1,updated_at:new Date().toISOString()}).eq('tenant',tenant).eq('id',text(p.id,80,true)).eq('version',v).select('id')));}
+ else if(operation==='createBooking'){const cid=text(p.client,80,true);const c=checked(await db.from('customers').select('address').eq('tenant',tenant).eq('id',cid).maybeSingle());if(!c)throw new AppError(404,'Cliente não encontrado.');if(p.companyVersion!==undefined&&version(p.companyVersion)!==company.version)throw new AppError(409,'Configurações alteradas. Atualize a agenda.');const s=configuredSchedule(p,storedSettings(company.settings));let visit;try{visit=resolveVisit(company.mode,text(p.location,20),c.address??undefined);}catch(e){throw new AppError(400,e instanceof Error?e.message:'Endereço inválido.');}id=crypto.randomUUID();checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:cid,date:s.date,time:s.time,start_minute:s.startMinute,duration:s.duration,kind:s.kind,location:visit.location,address:visit.address??null}}));}
+ else if(operation==='setBookingStatus'){const status=text(p.status,20,true),v=version(p.version);if(!['Confirmado','Concluído','Cancelado'].includes(status))throw new AppError(400,'Status inválido.');const prior=status==='Confirmado'?['Pendente']:status==='Concluído'?['Confirmado']:['Pendente','Confirmado'];changed(checked(await db.from('bookings').update({status,version:v+1}).eq('tenant',tenant).eq('id',text(p.id,80,true)).eq('version',v).in('status',prior).select('id')));}
  else throw new AppError(400,'Operação não reconhecida.');
- if(changed===0)throw new AppError(409,'O registro foi alterado ou não está disponível. Atualize os dados antes de tentar novamente.');
  return json({ok:true,id});
- }catch(error){return failure(error);}}
+ }catch(e){return failure(e);}}

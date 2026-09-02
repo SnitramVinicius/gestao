@@ -1,0 +1,3 @@
+'use client';
+import {useState} from 'react';import {LogOut} from 'lucide-react';import {browserSupabase} from '@/lib/supabase/browser';
+export function SignOutButton(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return <><button className="signout-button" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{const {error}=await browserSupabase().auth.signOut();if(error)throw error;window.location.replace('/login');}catch{setError('Não foi possível sair. Tente novamente.');setBusy(false);}}}><LogOut size={16} aria-hidden="true"/>{busy?'Saindo…':'Sair'}</button>{error&&<span role="alert">{error}</span>}</>;}

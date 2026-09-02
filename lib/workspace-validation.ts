@@ -1,7 +1,6 @@
 import {addressError,clientError,hasAddress,type Address,type AttendanceMode} from './customer-rules.ts';
 import {orderStatuses} from './workspace-model.ts';
 export class AppError extends Error{status:number;constructor(status:number,message:string){super(message);this.status=status;}}
-export function identity(req:Request):string{const id=req.headers.get('oai-authenticated-user-id')?.trim();if(!id||id.length>256)throw new AppError(401,'Entre com sua conta para acessar os registros.');return id;}
 export function mutationOrigin(req:Request){const origin=req.headers.get('origin');if(req.headers.get('sec-fetch-site')==='cross-site'||!origin||origin!==new URL(req.url).origin)throw new AppError(403,'Origem da solicitação não autorizada. Atualize a página.');}
 export function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw new AppError(400,'Dados inválidos.');return value as Record<string,unknown>;}
 export function text(value:unknown,max:number,required=false):string{if(value!==undefined&&typeof value!=='string')throw new AppError(400,'Campo de texto inválido.');const result=(value as string|undefined)?.trim()??'';if(result.length>max||(required&&!result))throw new AppError(400,'Preencha os campos obrigatórios e respeite o tamanho máximo.');return result;}
