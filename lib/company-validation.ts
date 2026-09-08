@@ -1,8 +1,8 @@
 import {AppError,object,text,address} from './workspace-validation.ts';
-import {sectors,timezones,moduleNames,minute,businessDay,type CompanySettings,type ModuleId} from './company-settings.ts';
+import {timezones,moduleNames,minute,businessDay,type CompanySettings,type ModuleId} from './company-settings.ts';
 function time(value:unknown){const v=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v))throw new AppError(400,'Informe horários válidos.');return v;}
 export function validateSettings(value:unknown):CompanySettings{
- const p=object(value);const sector=text(p.sector,80,true);if(!(sectors as readonly string[]).includes(sector))throw new AppError(400,'Selecione o ramo de atividade.');
+ const p=object(value);const sector=text(p.sector,80,true);if(sector.length<2)throw new AppError(400,'Informe o ramo de atividade da empresa.');
  const phone=text(p.phone,20).replace(/\D/g,'');if(phone&&!/^\d{10,11}$/.test(phone))throw new AppError(400,'Informe telefone com DDD.');
  const email=text(p.email,254).toLowerCase();if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw new AppError(400,'Informe um e-mail válido.');
  const timezone=text(p.timezone,60,true);if(!(timezones as readonly string[]).includes(timezone))throw new AppError(400,'Selecione um fuso horário válido.');
