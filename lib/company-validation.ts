@@ -1,5 +1,5 @@
 import {AppError,object,text,address} from './workspace-validation.ts';
-import {sectors,timezones,minute,businessDay,type CompanySettings} from './company-settings.ts';
+import {sectors,timezones,moduleNames,minute,businessDay,type CompanySettings,type ModuleId} from './company-settings.ts';
 function time(value:unknown){const v=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v))throw new AppError(400,'Informe horários válidos.');return v;}
 export function validateSettings(value:unknown):CompanySettings{
  const p=object(value);const sector=text(p.sector,80,true);if(!(sectors as readonly string[]).includes(sector))throw new AppError(400,'Selecione o ramo de atividade.');
@@ -11,7 +11,8 @@ export function validateSettings(value:unknown):CompanySettings{
  const services=p.services.map(value=>{const s=object(value);const id=text(s.id,80,true),name=text(s.name,120,true);if(!/^[a-zA-Z0-9_-]+$/.test(id)||ids.has(id)||names.has(name.toLocaleLowerCase('pt-BR')))throw new AppError(400,'Não repita serviços ou identificadores.');ids.add(id);names.add(name.toLocaleLowerCase('pt-BR'));if(!Number.isInteger(s.duration)||Number(s.duration)<5||Number(s.duration)>480||typeof s.active!=='boolean')throw new AppError(400,'A duração do serviço deve ser de 5 a 480 minutos.');return {id,name,duration:Number(s.duration),active:s.active};});
  if(!Array.isArray(p.hours)||p.hours.length!==7)throw new AppError(400,'Configure os sete dias da semana.');
  const hours=p.hours.map((value,day)=>{const h=object(value);if(h.day!==day||typeof h.enabled!=='boolean')throw new AppError(400,'Dia da semana inválido.');const open=time(h.open),close=time(h.close);if(minute(open)>=minute(close))throw new AppError(400,'O fechamento deve ser depois da abertura, no mesmo dia.');const breakStart=h.breakStart?time(h.breakStart):'',breakEnd=h.breakEnd?time(h.breakEnd):'';if(!!breakStart!==!!breakEnd||(breakStart&&!(minute(open)<minute(breakStart)&&minute(breakStart)<minute(breakEnd)&&minute(breakEnd)<minute(close))))throw new AppError(400,'O intervalo deve ficar dentro do expediente, com início e fim.');return {day,enabled:h.enabled,open,close,breakStart,breakEnd};});
- return {sector,phone,email,address:address(p.address),timezone,services,hours};
+ if(!Array.isArray(p.modules)||p.modules.length<1)throw new AppError(400,'Selecione ao menos uma ferramenta para a empresa.');const modules=[...new Set(p.modules.map(value=>text(value,30,true)))];if(modules.some(value=>!(value in moduleNames)))throw new AppError(400,'Ferramenta da empresa inválida.');
+ return {sector,phone,email,address:address(p.address),timezone,services,hours,modules:modules as ModuleId[],onboardingComplete:p.onboardingComplete===true};
 }
 export function configuredSchedule(p:Record<string,unknown>,settings:CompanySettings){
  const date=text(p.date,10,true),start=time(p.time);if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T12:00:00Z'))||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date)throw new AppError(400,'Data inválida.');
