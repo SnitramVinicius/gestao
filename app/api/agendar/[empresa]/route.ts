@@ -38,9 +38,10 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  if(customer){if(customer.name!==name)checked(await db.from('customers').update({name,version:customer.version+1}).eq('tenant',tenant).eq('id',customer.id));}
  else{const id=crypto.randomUUID();checked(await db.from('customers').insert({id,tenant,name,phone}));customer={id,name,version:1};}
  const id=crypto.randomUUID(),kind=selected.map(service=>service.name).join(' + ').slice(0,300),statusToken=token();
- checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,public_token_hash:await hash(statusToken),location:'business',address:null}}));
+ checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,public_token_hash:await hash(statusToken),amount:total,location:'business',address:null}}));
  return json({ok:true,id,token:statusToken,message:'Horário solicitado com sucesso.'});
  }catch(error){return failure(error);}}
+
 
 
 
