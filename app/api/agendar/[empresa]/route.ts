@@ -4,6 +4,8 @@ import {AppError,mutationOrigin,object,text} from '@/lib/workspace-validation';
 
 export const dynamic='force-dynamic';
 const companyId=(value:string)=>{if(value==='demo')return value;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new AppError(404,'Barbearia não encontrada.');return value;};
+const hash=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(24))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
 const validDate=(value:unknown)=>{const date=text(value,10,true);if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date)throw new AppError(400,'Escolha uma data válida.');return date;};
 const validTime=(value:unknown)=>{const time=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new AppError(400,'Escolha um horário válido.');return time;};
 
@@ -18,7 +20,7 @@ export async function GET(_request:Request,{params}:{params:Promise<{empresa:str
  }catch(error){return failure(error);}}
 
 export async function POST(request:Request,{params}:{params:Promise<{empresa:string}>}){try{
- mutationOrigin(request);const tenant=companyId((await params).empresa),payload=object(await readJson(request));if(tenant==='demo')return json({ok:true,id:crypto.randomUUID(),message:'Horário solicitado na demonstração.'});const db=adminClient();
+ mutationOrigin(request);const tenant=companyId((await params).empresa),payload=object(await readJson(request));if(tenant==='demo')return json({ok:true,id:crypto.randomUUID(),token:'demo-'+token(),message:'Horário solicitado na demonstração.'});const db=adminClient();
  const company=checked(await db.from('companies').select('id,name,version,settings').eq('id',tenant).maybeSingle());
  if(!company)throw new AppError(404,'Barbearia não encontrada.');
  const settings=storedSettings(company.settings),name=text(payload.name,100,true),phone=text(payload.phone,20,true).replace(/\D/g,'');
@@ -35,10 +37,12 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  let customer=checked(await db.from('customers').select('id,name,version').eq('tenant',tenant).eq('phone',phone).maybeSingle());
  if(customer){if(customer.name!==name)checked(await db.from('customers').update({name,version:customer.version+1}).eq('tenant',tenant).eq('id',customer.id));}
  else{const id=crypto.randomUUID();checked(await db.from('customers').insert({id,tenant,name,phone}));customer={id,name,version:1};}
- const id=crypto.randomUUID(),kind=selected.map(service=>service.name).join(' + ').slice(0,300);
- checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,location:'business',address:null}}));
- return json({ok:true,id,message:'Horário solicitado com sucesso.'});
+ const id=crypto.randomUUID(),kind=selected.map(service=>service.name).join(' + ').slice(0,300),statusToken=token();
+ checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,public_token_hash:await hash(statusToken),location:'business',address:null}}));
+ return json({ok:true,id,token:statusToken,message:'Horário solicitado com sucesso.'});
  }catch(error){return failure(error);}}
+
+
 
 
 

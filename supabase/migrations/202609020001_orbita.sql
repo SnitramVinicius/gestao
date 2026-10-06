@@ -23,7 +23,7 @@ create table public.bookings (
  date date not null,time text not null check(time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
  start_minute integer not null check(start_minute between 0 and 1439),
  duration integer not null check(duration between 5 and 480),
- kind text not null,professional_id text,location text not null check(location in ('customer','business')),address jsonb,
+ kind text not null,professional_id text,public_token_hash text,location text not null check(location in ('customer','business')),address jsonb,
  status text not null check(status in ('Pendente','Confirmado','Concluído','Cancelado')),version integer not null default 1,
  check(start_minute+duration<=1440),
  foreign key(tenant,customer_id) references public.customers(tenant,id),
@@ -81,9 +81,9 @@ declare current_version integer;
 begin
  select version into current_version from public.companies where id=p_tenant for update;
  if current_version is null or current_version<>p_version then raise exception 'stale_company';end if;
- insert into public.bookings(id,tenant,customer_id,date,time,start_minute,duration,kind,professional_id,location,address,status)
+ insert into public.bookings(id,tenant,customer_id,date,time,start_minute,duration,kind,professional_id,public_token_hash,location,address,status)
  values(p_booking->>'id',p_tenant,p_booking->>'customer_id',(p_booking->>'date')::date,p_booking->>'time',
- (p_booking->>'start_minute')::integer,(p_booking->>'duration')::integer,p_booking->>'kind',nullif(p_booking->>'professional_id',''),p_booking->>'location',nullif(p_booking->'address','null'::jsonb),'Pendente');
+ (p_booking->>'start_minute')::integer,(p_booking->>'duration')::integer,p_booking->>'kind',nullif(p_booking->>'professional_id',''),nullif(p_booking->>'public_token_hash',''),p_booking->>'location',nullif(p_booking->'address','null'::jsonb),'Pendente');
 end $$;
 revoke all on function public.create_booking(uuid,integer,jsonb),public.record_change(),public.record_company_change(),public.limit_photos() from public,anon,authenticated;
 grant execute on function public.create_booking(uuid,integer,jsonb),public.record_change(),public.record_company_change(),public.limit_photos() to service_role;
@@ -91,4 +91,5 @@ insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
  values('orbita-files','orbita-files',false,4194304,array['image/png','image/jpeg','image/webp']);
 -- No browser storage policies: files are served by authenticated, tenant-scoped application routes.
 commit;
+
 
