@@ -8,13 +8,13 @@ const validDate=(value:unknown)=>{const date=text(value,10,true);if(!/^\d{4}-\d{
 const validTime=(value:unknown)=>{const time=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new AppError(400,'Escolha um horário válido.');return time;};
 
 export async function GET(_request:Request,{params}:{params:Promise<{empresa:string}>}){try{
- const tenant=companyId((await params).empresa);if(tenant==='demo'){const settings=defaultSettings();return json({company:{id:'demo',name:'Barbearia demonstração',timezone:settings.timezone,hours:settings.hours,services:settings.services},bookings:[]});}const db=adminClient();
+ const tenant=companyId((await params).empresa);if(tenant==='demo'){const settings=defaultSettings(),team=[{id:'barbeiro-joao',name:'João',role:'Barbeiro'},{id:'barbeiro-carlos',name:'Carlos',role:'Barbeiro'}];return json({company:{id:'demo',name:'Barbearia demonstração',timezone:settings.timezone,hours:settings.hours,services:settings.services,team},bookings:[]});}const db=adminClient();
  const company=checked(await db.from('companies').select('id,name,settings').eq('id',tenant).maybeSingle());
  if(!company)throw new AppError(404,'Barbearia não encontrada.');
  const settings=storedSettings(company.settings);
  const from=new Date().toISOString().slice(0,10),until=new Date(Date.now()+60*86400000).toISOString().slice(0,10);
- const rows=checked(await db.from('bookings').select('date,time,duration,status').eq('tenant',tenant).gte('date',from).lte('date',until).neq('status','Cancelado'));
- return json({company:{id:company.id,name:company.name,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel}))},bookings:rows});
+ const rows=checked(await db.from('bookings').select('date,time,duration,status,professional_id').eq('tenant',tenant).gte('date',from).lte('date',until).neq('status','Cancelado'));
+ return json({company:{id:company.id,name:company.name,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel})),team:settings.team.filter(member=>member.active).map(({id,name,role})=>({id,name,role}))},bookings:rows.map(row=>({...row,professional:row.professional_id??undefined}))});
  }catch(error){return failure(error);}}
 
 export async function POST(request:Request,{params}:{params:Promise<{empresa:string}>}){try{
@@ -26,7 +26,7 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  if(!Array.isArray(payload.services)||payload.services.length<1||payload.services.length>10)throw new AppError(400,'Escolha pelo menos um serviço.');
  const ids=[...new Set(payload.services.map(value=>text(value,80,true)))],services=ids.map(id=>settings.services.find(service=>service.id===id&&service.active));
  if(services.some(service=>!service))throw new AppError(400,'Um dos serviços selecionados não está disponível.');
- const selected=services.filter(Boolean) as typeof settings.services,total=selected.reduce((sum,service)=>sum+service.duration,0);
+ const selected=services.filter(Boolean) as typeof settings.services,total=selected.reduce((sum,service)=>sum+service.duration,0),active=settings.team.filter(member=>member.active),requested=text(payload.professional,80),professional=active.length>1?active.find(member=>member.id===requested):active[0];if(active.length>1&&!professional)throw new AppError(400,'Selecione um barbeiro.');
  if(total>480)throw new AppError(400,'A duração total dos serviços é muito longa.');
  const date=validDate(payload.date),time=validTime(payload.time),day=businessDay(date,settings),start=minute(time),end=start+total;
  const localToday=new Intl.DateTimeFormat('en-CA',{timeZone:settings.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -36,9 +36,10 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  if(customer){if(customer.name!==name)checked(await db.from('customers').update({name,version:customer.version+1}).eq('tenant',tenant).eq('id',customer.id));}
  else{const id=crypto.randomUUID();checked(await db.from('customers').insert({id,tenant,name,phone}));customer={id,name,version:1};}
  const id=crypto.randomUUID(),kind=selected.map(service=>service.name).join(' + ').slice(0,300);
- checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,location:'business',address:null}}));
+ checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,location:'business',address:null}}));
  return json({ok:true,id,message:'Horário solicitado com sucesso.'});
  }catch(error){return failure(error);}}
+
 
 
 
