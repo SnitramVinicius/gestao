@@ -1,5 +1,5 @@
 import {adminClient,checked,changed,json,failure,readJson} from '@/db/runtime';
-import {storedSettings,businessDay,minute} from '@/lib/company-settings';
+import {storedSettings,businessDay,minute,professionalAvailable,professionalHours} from '@/lib/company-settings';
 import {AppError,mutationOrigin,object,text} from '@/lib/workspace-validation';
 
 export const dynamic='force-dynamic';
@@ -21,14 +21,15 @@ export async function GET(_request:Request,{params}:{params:Promise<{token:strin
  const {db,booking,company,settings,customer,barber}=await load(token);
  const from=new Date().toISOString().slice(0,10),until=new Date(Date.now()+60*86400000).toISOString().slice(0,10);
  const occupied=checked(await db.from('bookings').select('id,date,time,duration,status').eq('tenant',booking.tenant).eq('professional_id',booking.professional_id).gte('date',from).lte('date',until).neq('status','Cancelado').neq('id',booking.id));
- return json({company:company.name,customer:customer.name,timezone:settings.timezone,booking:{id:booking.id,date:booking.date,time:booking.time,duration:booking.duration,kind:booking.kind,status:booking.status,professional:barber?.name??''},hours:settings.hours,bookings:occupied});
+ return json({company:company.name,customer:customer.name,timezone:settings.timezone,booking:{id:booking.id,date:booking.date,time:booking.time,duration:booking.duration,kind:booking.kind,status:booking.status,professional:barber?.name??''},hours:professionalHours(barber,settings),blocks:barber?.blocks??[],bookings:occupied});
  }catch(error){return failure(error);}}
 export async function POST(request:Request,{params}:{params:Promise<{token:string}>}){try{
  mutationOrigin(request);const token=(await params).token,payload=object(await readJson(request)),action=text(payload.action,20,true);if(token.startsWith('demo-'))return json({ok:true});
- const {db,booking,settings}=await load(token);
+ const {db,booking,settings,barber}=await load(token);
  if(action==='cancel'){if(!['Pendente','Confirmado'].includes(booking.status))throw new AppError(400,'Este agendamento não pode mais ser cancelado.');changed(checked(await db.from('bookings').update({status:'Cancelado',version:booking.version+1}).eq('id',booking.id).eq('version',booking.version).select('id')));}
- else if(action==='reschedule'){if(!['Pendente','Confirmado'].includes(booking.status))throw new AppError(400,'Este agendamento não pode mais ser reagendado.');const date=validDate(payload.date),time=validTime(payload.time),day=businessDay(date,settings),start=minute(time),end=start+booking.duration,localToday=new Intl.DateTimeFormat('en-CA',{timeZone:settings.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());if(date<localToday)throw new AppError(400,'Escolha uma data a partir de hoje.');if(!day?.enabled||start<minute(day.open)||end>minute(day.close)||(day.breakStart&&start<minute(day.breakEnd)&&end>minute(day.breakStart)))throw new AppError(400,'Esse horário não está dentro do expediente.');changed(checked(await db.from('bookings').update({date,time,start_minute:start,status:'Pendente',version:booking.version+1}).eq('id',booking.id).eq('version',booking.version).select('id')));}
+ else if(action==='reschedule'){if(!['Pendente','Confirmado'].includes(booking.status))throw new AppError(400,'Este agendamento não pode mais ser reagendado.');const date=validDate(payload.date),time=validTime(payload.time),day=businessDay(date,settings),start=minute(time),end=start+booking.duration,localToday=new Intl.DateTimeFormat('en-CA',{timeZone:settings.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());if(date<localToday)throw new AppError(400,'Escolha uma data a partir de hoje.');if(!day?.enabled||start<minute(day.open)||end>minute(day.close)||(day.breakStart&&start<minute(day.breakEnd)&&end>minute(day.breakStart)))throw new AppError(400,'Esse horário não está dentro do expediente.');if(barber&&!professionalAvailable(barber,settings,date,start,booking.duration))throw new AppError(400,'O barbeiro não está disponível nesse horário.');changed(checked(await db.from('bookings').update({date,time,start_minute:start,status:'Pendente',version:booking.version+1}).eq('id',booking.id).eq('version',booking.version).select('id')));}
  else throw new AppError(400,'Ação inválida.');
  return json({ok:true});
  }catch(error){return failure(error);}}
+
 

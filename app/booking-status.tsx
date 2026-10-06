@@ -3,14 +3,15 @@ import {useEffect,useMemo,useState} from 'react';
 import {CalendarDays,CheckCircle2,Clock,RefreshCw,Scissors,XCircle} from 'lucide-react';
 
 type Day={day:number;enabled:boolean;open:string;close:string;breakStart:string;breakEnd:string};
-type Data={company:string;customer:string;timezone:string;booking:{date:string;time:string;duration:number;kind:string;status:string;professional:string};hours:Day[];bookings:Array<{date:string;time:string;duration:number}>};
+type Block={date:string;start:string;end:string;reason:string};
+type Data={company:string;customer:string;timezone:string;booking:{date:string;time:string;duration:number;kind:string;status:string;professional:string};hours:Day[];blocks:Block[];bookings:Array<{date:string;time:string;duration:number}>};
 const minutes=(value:string)=>{const [h,m]=value.split(':').map(Number);return h*60+m},clock=(value:number)=>String(Math.floor(value/60)).padStart(2,'0')+':'+String(value%60).padStart(2,'0');
 const dateLabel=(value:string)=>new Date(value+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 export function BookingStatus({token}:{token:string}){
  const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[editing,setEditing]=useState(false),[date,setDate]=useState(''),[time,setTime]=useState(''),[saving,setSaving]=useState(false);
  const load=()=>{setLoading(true);fetch('/api/booking-status/'+encodeURIComponent(token),{cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error||'Não foi possível consultar o agendamento.');setData(body);setDate(body.booking.date);setTime('');}).catch(reason=>setError(reason.message)).finally(()=>setLoading(false));};
  useEffect(load,[token]);
- const slots=useMemo(()=>{if(!data||!date||!data.hours.length)return[];const day=data.hours[new Date(date+'T12:00:00Z').getUTCDay()];if(!day?.enabled)return[];const occupied=data.bookings.filter(item=>item.date===date).map(item=>({start:minutes(item.time),end:minutes(item.time)+item.duration})),values=[];for(let start=minutes(day.open);start+data.booking.duration<=minutes(day.close);start+=15){const end=start+data.booking.duration;if(day.breakStart&&start<minutes(day.breakEnd)&&end>minutes(day.breakStart))continue;if(!occupied.some(item=>start<item.end&&end>item.start))values.push(clock(start));}return values;},[data,date]);
+ const slots=useMemo(()=>{if(!data||!date||!data.hours.length)return[];const day=data.hours[new Date(date+'T12:00:00Z').getUTCDay()];if(!day?.enabled)return[];const blocked=(data.blocks??[]).filter(block=>block.date===date).map(block=>({start:minutes(block.start),end:minutes(block.end)})),occupied=data.bookings.filter(item=>item.date===date).map(item=>({start:minutes(item.time),end:minutes(item.time)+item.duration})),values=[];for(let start=minutes(day.open);start+data.booking.duration<=minutes(day.close);start+=15){const end=start+data.booking.duration;if(day.breakStart&&start<minutes(day.breakEnd)&&end>minutes(day.breakStart))continue;if(!occupied.some(item=>start<item.end&&end>item.start)&&!blocked.some(item=>start<item.end&&end>item.start))values.push(clock(start));}return values;},[data,date]);
  const act=async(action:'cancel'|'reschedule')=>{setSaving(true);setError('');try{const response=await fetch('/api/booking-status/'+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,date,time})}),body=await response.json();if(!response.ok)throw new Error(body.error||'Não foi possível alterar.');setEditing(false);load();}catch(reason){setError(reason instanceof Error?reason.message:'Não foi possível alterar.');}finally{setSaving(false);}};
  if(loading&&!data)return <main className="booking-status-page"><div className="booking-status-card">Carregando agendamento…</div></main>;
  if(error&&!data)return <main className="booking-status-page"><div className="booking-status-card"><h1>Agendamento indisponível</h1><p>{error}</p></div></main>;
@@ -23,4 +24,5 @@ export function BookingStatus({token}:{token:string}){
   {booking.status==='Pendente'&&<p className="booking-status-note">Aguardando confirmação da barbearia.</p>}{booking.status==='Cancelado'&&<p className="booking-status-note">Este horário foi liberado na agenda.</p>}
  </div></main>;
 }
+
 

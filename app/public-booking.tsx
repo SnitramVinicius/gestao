@@ -3,7 +3,8 @@ import {useEffect,useMemo,useState} from 'react';
 import {CalendarDays,Check,Clock,Phone,Scissors,UserRound,UsersRound} from 'lucide-react';
 
 type Service={id:string;name:string;description:string;duration:number;price:number;pricingModel:'fixed'|'monthly'|'quote'};
-type Barber={id:string;name:string;role:string};
+type Block={id:string;date:string;start:string;end:string;reason:string};
+type Barber={id:string;name:string;role:string;hours?:Day[];blocks?:Block[]};
 type Day={day:number;enabled:boolean;open:string;close:string;breakStart:string;breakEnd:string};
 type PublicData={company:{id:string;name:string;timezone:string;hours:Day[];services:Service[];team:Barber[]};bookings:Array<{date:string;time:string;duration:number;status:string;professional?:string}>};
 const money=(value:number)=>value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -15,7 +16,7 @@ export function PublicBooking({empresa}:{empresa:string}){
  const [data,setData]=useState<PublicData|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[selected,setSelected]=useState<string[]>([]),[professional,setProfessional]=useState(''),[date,setDate]=useState(''),[time,setTime]=useState(''),[sending,setSending]=useState(false),[done,setDone]=useState(false),[statusToken,setStatusToken]=useState('');
  useEffect(()=>{fetch('/api/agendar/'+encodeURIComponent(empresa),{cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error||'Não foi possível abrir a agenda.');setData(body);if(body.company.team.length===1)setProfessional(body.company.team[0].id);}).catch(reason=>setError(reason.message)).finally(()=>setLoading(false));},[empresa]);
  const services=data?.company.services.filter(service=>selected.includes(service.id))??[],barbers=data?.company.team??[],duration=services.reduce((sum,service)=>sum+service.duration,0),total=services.reduce((sum,service)=>sum+service.price,0);
- const slots=useMemo(()=>{if(!data||!date||!duration||(barbers.length>1&&!professional))return[];const day=data.company.hours[new Date(date+'T12:00:00Z').getUTCDay()];if(!day?.enabled)return[];const occupied=data.bookings.filter(booking=>booking.date===date&&(booking.professional||'')===(professional||'')).map(booking=>({start:minutes(booking.time),end:minutes(booking.time)+booking.duration}));const values:string[]=[];for(let start=minutes(day.open);start+duration<=minutes(day.close);start+=15){const end=start+duration;if(day.breakStart&&start<minutes(day.breakEnd)&&end>minutes(day.breakStart))continue;if(occupied.some(item=>start<item.end&&end>item.start))continue;values.push(clock(start));}return values;},[data,date,duration,professional,barbers.length]);
+ const slots=useMemo(()=>{if(!data||!date||!duration||(barbers.length>1&&!professional))return[];const barber=barbers.find(item=>item.id===professional),day=(barber?.hours??data.company.hours)[new Date(date+'T12:00:00Z').getUTCDay()];if(!day?.enabled)return[];const blocked=(barber?.blocks??[]).filter(block=>block.date===date).map(block=>({start:minutes(block.start),end:minutes(block.end)})),occupied=data.bookings.filter(booking=>booking.date===date&&(booking.professional||'')===(professional||'')).map(booking=>({start:minutes(booking.time),end:minutes(booking.time)+booking.duration}));const values:string[]=[];for(let start=minutes(day.open);start+duration<=minutes(day.close);start+=15){const end=start+duration;if(day.breakStart&&start<minutes(day.breakEnd)&&end>minutes(day.breakStart))continue;if(occupied.some(item=>start<item.end&&end>item.start)||blocked.some(item=>start<item.end&&end>item.start))continue;values.push(clock(start));}return values;},[data,date,duration,professional,barbers.length]);
  const today=useMemo(()=>new Date().toLocaleDateString('en-CA',{timeZone:data?.company.timezone||'America/Sao_Paulo'}),[data]),max=useMemo(()=>{const value=new Date();value.setDate(value.getDate()+60);return value.toLocaleDateString('en-CA');},[]);
  const barberName=barbers.find(barber=>barber.id===professional)?.name;
  if(loading)return <main className="public-booking"><div className="public-card"><p>Carregando agenda…</p></div></main>;
@@ -31,5 +32,6 @@ export function PublicBooking({empresa}:{empresa:string}){
   </form>
  </div></main>;
 }
+
 
 

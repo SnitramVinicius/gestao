@@ -1,5 +1,5 @@
 import {adminClient,checked,json,failure,readJson} from '@/db/runtime';
-import {storedSettings,defaultSettings,businessDay,minute} from '@/lib/company-settings';
+import {storedSettings,defaultSettings,businessDay,minute,professionalAvailable} from '@/lib/company-settings';
 import {AppError,mutationOrigin,object,text} from '@/lib/workspace-validation';
 
 export const dynamic='force-dynamic';
@@ -16,7 +16,7 @@ export async function GET(_request:Request,{params}:{params:Promise<{empresa:str
  const settings=storedSettings(company.settings);
  const from=new Date().toISOString().slice(0,10),until=new Date(Date.now()+60*86400000).toISOString().slice(0,10);
  const rows=checked(await db.from('bookings').select('date,time,duration,status,professional_id').eq('tenant',tenant).gte('date',from).lte('date',until).neq('status','Cancelado'));
- return json({company:{id:company.id,name:company.name,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel})),team:settings.team.filter(member=>member.active).map(({id,name,role})=>({id,name,role}))},bookings:rows.map(row=>({...row,professional:row.professional_id??undefined}))});
+ return json({company:{id:company.id,name:company.name,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel})),team:settings.team.filter(member=>member.active).map(({id,name,role,hours,blocks})=>({id,name,role,hours,blocks}))},bookings:rows.map(row=>({...row,professional:row.professional_id??undefined}))});
  }catch(error){return failure(error);}}
 
 export async function POST(request:Request,{params}:{params:Promise<{empresa:string}>}){try{
@@ -33,7 +33,7 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  const date=validDate(payload.date),time=validTime(payload.time),day=businessDay(date,settings),start=minute(time),end=start+total;
  const localToday=new Intl.DateTimeFormat('en-CA',{timeZone:settings.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  if(date<localToday)throw new AppError(400,'Escolha uma data a partir de hoje.');
- if(!day?.enabled||start<minute(day.open)||end>minute(day.close)||(day.breakStart&&start<minute(day.breakEnd)&&end>minute(day.breakStart)))throw new AppError(400,'Esse horário não está dentro do expediente.');
+ if(!day?.enabled||start<minute(day.open)||end>minute(day.close)||(day.breakStart&&start<minute(day.breakEnd)&&end>minute(day.breakStart)))throw new AppError(400,'Esse horário não está dentro do expediente.');if(professional&&!professionalAvailable(professional,settings,date,start,total))throw new AppError(400,'O barbeiro não está disponível nesse horário.');
  let customer=checked(await db.from('customers').select('id,name,version').eq('tenant',tenant).eq('phone',phone).maybeSingle());
  if(customer){if(customer.name!==name)checked(await db.from('customers').update({name,version:customer.version+1}).eq('tenant',tenant).eq('id',customer.id));}
  else{const id=crypto.randomUUID();checked(await db.from('customers').insert({id,tenant,name,phone}));customer={id,name,version:1};}
@@ -41,6 +41,7 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  checked(await db.rpc('create_booking',{p_tenant:tenant,p_version:company.version,p_booking:{id,customer_id:customer.id,date,time,start_minute:start,duration:total,kind,professional_id:professional?.id??null,public_token_hash:await hash(statusToken),location:'business',address:null}}));
  return json({ok:true,id,token:statusToken,message:'Horário solicitado com sucesso.'});
  }catch(error){return failure(error);}}
+
 
 
 

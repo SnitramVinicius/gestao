@@ -7,7 +7,8 @@ export const moduleNames={agenda:'Agenda',customers:'Clientes',quotes:'Orçament
 export type ModuleId=keyof typeof moduleNames;
 export type PricingModel='fixed'|'monthly'|'quote';
 export type Service={id:string;name:string;description:string;duration:number;price:number;pricingModel:PricingModel;active:boolean};
-export type TeamMember={id:string;name:string;role:string;phone:string;email:string;active:boolean};
+export type AvailabilityBlock={id:string;date:string;start:string;end:string;reason:string};
+export type TeamMember={id:string;name:string;role:string;phone:string;email:string;active:boolean;hours?:BusinessDay[];blocks?:AvailabilityBlock[]};
 export type BusinessDay={day:number;enabled:boolean;open:string;close:string;breakStart:string;breakEnd:string};
 export type CompanySettings={sector:string;phone:string;email:string;address?:Address;timezone:string;services:Service[];hours:BusinessDay[];modules:ModuleId[];hasTeam:boolean;team:TeamMember[];onboardingComplete:boolean};
 type Template={description:string;mode:AttendanceMode;modules:ModuleId[];services:Array<[string,number,PricingModel?]>};
@@ -24,8 +25,13 @@ export function knownSector(value:string):Sector|undefined{return sectors.find(s
 export function templateFor(sector:string):Template{const known=knownSector(sector);return known?sectorTemplates[known]:genericTemplate;}
 export function servicesFor(sector:string):Service[]{return templateFor(sector).services.map(([name,duration,pricingModel='fixed'],i)=>({id:sector.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)+'-'+i,name,description:'',duration,price:0,pricingModel,active:true}))}
 export function defaultSettings():CompanySettings{return {sector:'Barbearia',phone:'',email:'',timezone:'America/Sao_Paulo',services:servicesFor('Barbearia'),modules:['agenda','customers','professionals','resources'],hasTeam:false,team:[],onboardingComplete:false,hours:weekdays.map((_,day)=>({day,enabled:day!==0,open:'09:00',close:'18:00',breakStart:'',breakEnd:''}))};}
-export function storedSettings(raw:unknown):CompanySettings{let parsed:Partial<CompanySettings>={};try{parsed=typeof raw==='string'?JSON.parse(raw):raw&&typeof raw==='object'?raw as Partial<CompanySettings>:{};}catch{}const base=defaultSettings(),services=Array.isArray(parsed.services)?parsed.services.map(service=>({...service,description:service.description??'',price:Number(service.price??0),pricingModel:service.pricingModel??'fixed'})):base.services,team=Array.isArray(parsed.team)?parsed.team:base.team;return {...base,...parsed,services,team,hasTeam:parsed.hasTeam===true,hours:Array.isArray(parsed.hours)&&parsed.hours.length===7?parsed.hours:base.hours,modules:Array.isArray(parsed.modules)?parsed.modules:base.modules,onboardingComplete:parsed.onboardingComplete===true};}
+export function storedSettings(raw:unknown):CompanySettings{let parsed:Partial<CompanySettings>={};try{parsed=typeof raw==='string'?JSON.parse(raw):raw&&typeof raw==='object'?raw as Partial<CompanySettings>:{};}catch{}const base=defaultSettings(),services=Array.isArray(parsed.services)?parsed.services.map(service=>({...service,description:service.description??'',price:Number(service.price??0),pricingModel:service.pricingModel??'fixed'})):base.services,team=Array.isArray(parsed.team)?parsed.team.map(member=>({...member,hours:Array.isArray(member.hours)&&member.hours.length===7?member.hours:undefined,blocks:Array.isArray(member.blocks)?member.blocks:[]})):base.team;return {...base,...parsed,services,team,hasTeam:parsed.hasTeam===true,hours:Array.isArray(parsed.hours)&&parsed.hours.length===7?parsed.hours:base.hours,modules:Array.isArray(parsed.modules)?parsed.modules:base.modules,onboardingComplete:parsed.onboardingComplete===true};}
 export function minute(time:string){const [h,m]=time.split(':').map(Number);return h*60+m;}
 export function businessDay(date:string,settings:CompanySettings){return settings.hours[new Date(date+'T12:00:00Z').getUTCDay()];}
 export function hoursLabel(date:string,settings:CompanySettings){const d=businessDay(date,settings);return !d?'Selecione uma data válida':!d.enabled?'Fechado nesta data':d.open+' às '+d.close+(d.breakStart?' · Intervalo '+d.breakStart+' às '+d.breakEnd:'');}
-
+export function professionalHours(member:TeamMember|undefined,settings:CompanySettings){return member?.hours?.length===7?member.hours:settings.hours;}
+export function professionalAvailable(member:TeamMember|undefined,settings:CompanySettings,date:string,start:number,duration:number){
+ const hours=professionalHours(member,settings),day=hours[new Date(date+'T12:00:00Z').getUTCDay()],end=start+duration;
+ if(!day?.enabled||start<minute(day.open)||end>minute(day.close)||(day.breakStart&&start<minute(day.breakEnd)&&end>minute(day.breakStart)))return false;
+ return !(member?.blocks??[]).some(block=>block.date===date&&start<minute(block.end)&&end>minute(block.start));
+}
