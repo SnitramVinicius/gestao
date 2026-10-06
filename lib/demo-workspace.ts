@@ -4,7 +4,7 @@ import {validateSettings,configuredSchedule} from './company-validation.ts';
 import {object,text,version,mode,customer,address,orderStatus,imageMime,AppError} from './workspace-validation.ts';
 import {resolveVisit} from './customer-rules.ts';
 export function createDemo(){
- const data:Workspace={company:{id:'demo',name:'Minha empresa',mode:'business',version:1,settings:defaultSettings(),hasLogo:false},clients:[],orders:[],bookings:[],photos:[],audit:[]};
+ const data:Workspace={company:{id:'demo',name:'Minha barbearia',mode:'business',version:1,settings:defaultSettings(),hasLogo:false},clients:[],orders:[],bookings:[],photos:[],audit:[]};
  const assets=new Map<string,string>();
  const fail=(message:string)=>{throw new Error(message);};
  const check=(record:{version:number}|undefined,v:unknown)=>{if(!record||record.version!==version(v))fail('Atualize os dados antes de salvar.');};
@@ -40,3 +40,4 @@ export function createDemo(){
  logo:()=>assets.get('logo')
  };
 }
+
