@@ -1,10 +1,11 @@
 'use client';
 import {useMemo,useRef,useState} from 'react';
-import {ChevronLeft,ChevronRight,GripVertical,MapPin} from 'lucide-react';
+import {ChevronLeft,ChevronRight,GripVertical,MapPin,MessageCircle,Bell} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import type {Booking,Company} from '@/lib/workspace-model';
 import type {Client} from '@/lib/customer-rules';
 import {businessDay,minute} from '@/lib/company-settings';
+import {openWhatsApp} from '@/lib/whatsapp';
 
 const SLOT=15,ROW=34;
 function iso(d:Date){return d.toISOString().slice(0,10)}
@@ -18,7 +19,8 @@ export function WeekCalendar({company,clients,bookings,selectedDate,saving,onSel
  const days=useMemo(()=>Array.from({length:7},(_,i)=>add(monday(selectedDate),i)),[selectedDate]);
  const limits=days.map(d=>businessDay(d,company.settings)).filter(Boolean),openDays=limits.filter(d=>d.enabled),starts=openDays.map(d=>minute(d.open)),ends=openDays.map(d=>minute(d.close));const start=Math.min(...starts,8*60),end=Math.max(...ends,18*60),slots=Math.ceil((end-start)/SLOT);
  const [drag,setDrag]=useState<{booking:Booking;x:number;y:number}|null>(null),[chosen,setChosen]=useState<Booking|null>(null);const hold=useRef<ReturnType<typeof setTimeout>|null>(null);const moved=useRef(false);
- const name=(id:string)=>clients.find(c=>c.id===id)?.name??'Cliente',barber=(id?:string)=>company.settings.team.find(member=>member.id===id)?.name;
+ const customer=(id:string)=>clients.find(c=>c.id===id),name=(id:string)=>customer(id)?.name??'Cliente',barber=(id?:string)=>company.settings.team.find(member=>member.id===id)?.name;
+ function notify(b:Booking,kind:'confirmation'|'reminder'){const client=customer(b.client);if(!client?.phone)return;openWhatsApp({customer:client.name,phone:client.phone,service:b.kind,barber:barber(b.professional),date:b.date,time:b.time,company:company.name},kind);}
  function target(x:number,y:number){const el=document.elementFromPoint(x,y)?.closest<HTMLElement>('[data-calendar-day]');if(!el)return null;const rect=el.getBoundingClientRect(),raw=Math.max(0,Math.min(slots-1,Math.floor((y-rect.top)/ROW)));return {date:el.dataset.calendarDay!,time:timeLabel(start+raw*SLOT)};}
  function begin(b:Booking,x:number,y:number){if(saving||['Concluído','Cancelado'].includes(b.status))return;moved.current=false;setDrag({booking:b,x,y});}
  async function finish(x:number,y:number){if(!drag)return;const t=target(x,y),b=drag.booking;setDrag(null);if(t&&(t.date!==b.date||t.time!==b.time)){moved.current=true;await onMove(b,t.date,t.time);}}
@@ -35,9 +37,10 @@ export function WeekCalendar({company,clients,bookings,selectedDate,saving,onSel
    </div>
   </div>
   {drag&&<div className="drag-preview" style={{left:drag.x,top:drag.y}}><strong>{name(drag.booking.client)}</strong><small>{drag.booking.kind} · {drag.booking.duration} min{barber(drag.booking.professional)?' · '+barber(drag.booking.professional):''}</small></div>}
-  {chosen&&<div className="calendar-selection"><div><strong>{name(chosen.client)}</strong><small>{chosen.time} · {chosen.kind}{barber(chosen.professional)?' · '+barber(chosen.professional):''}</small></div>{chosen.status==='Pendente'&&<><Button disabled={saving} onClick={()=>{onStatus(chosen,'Confirmado');setChosen(null);}}>Confirmar</Button><Button variant="outline" disabled={saving} onClick={()=>{onStatus(chosen,'Cancelado');setChosen(null);}}>Recusar</Button></>}{chosen.status==='Confirmado'&&<><Button disabled={saving} onClick={()=>{onStatus(chosen,'Concluído');setChosen(null);}}>Concluir</Button><Button variant="outline" disabled={saving} onClick={()=>{onStatus(chosen,'Cancelado');setChosen(null);}}>Cancelar</Button></>}<Button variant="ghost" onClick={()=>setChosen(null)}>Fechar</Button></div>}
+  {chosen&&<div className="calendar-selection"><div><strong>{name(chosen.client)}</strong><small>{chosen.time} · {chosen.kind}{barber(chosen.professional)?' · '+barber(chosen.professional):''}</small></div>{chosen.status==='Pendente'&&<><Button disabled={saving} onClick={()=>{onStatus(chosen,'Confirmado');notify(chosen,'confirmation');setChosen(null);}}><MessageCircle/>Confirmar e avisar</Button><Button variant="outline" disabled={saving} onClick={()=>{onStatus(chosen,'Cancelado');setChosen(null);}}>Recusar</Button></>}{chosen.status==='Confirmado'&&<><Button variant="outline" disabled={saving} onClick={()=>notify(chosen,'reminder')}><Bell/>Enviar lembrete</Button><Button disabled={saving} onClick={()=>{onStatus(chosen,'Concluído');setChosen(null);}}>Concluir</Button><Button variant="outline" disabled={saving} onClick={()=>{onStatus(chosen,'Cancelado');setChosen(null);}}>Cancelar</Button></>}<Button variant="ghost" onClick={()=>setChosen(null)}>Fechar</Button></div>}
   <p className="calendar-help">No celular, toque e segure um atendimento antes de arrastar. Toque em um atendimento pendente para confirmá-lo.</p>
  </div>
 }
+
 
 
