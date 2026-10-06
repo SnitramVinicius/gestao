@@ -9,7 +9,7 @@ create table public.companies (
  version integer not null default 1 check(version>0),settings jsonb,logo_key text);
 create table public.customers (
  id text primary key,tenant uuid not null references public.companies(id),
- name text not null,phone text not null,address jsonb,version integer not null default 1,
+ name text not null,phone text not null,address jsonb,notes text not null default '',preferred_professional_id text,version integer not null default 1,
  created_at timestamptz not null default now(),unique(tenant,id),unique(tenant,phone));
 create table public.orders (
  id text primary key,tenant uuid not null references public.companies(id),customer_id text not null,
@@ -91,5 +91,6 @@ insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
  values('orbita-files','orbita-files',false,4194304,array['image/png','image/jpeg','image/webp']);
 -- No browser storage policies: files are served by authenticated, tenant-scoped application routes.
 commit;
+
 
 

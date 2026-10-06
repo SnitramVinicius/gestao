@@ -1,7 +1,7 @@
 export type AttendanceMode = 'customer' | 'business' | 'both';
 export type VisitLocation = 'customer' | 'business';
 export type Address = { street: string; number: string; neighborhood: string; city: string; state: string; postalCode: string; complement: string };
-export type Client = { id: string; name: string; phone: string; address?: Address; version: number; createdAt?: string };
+export type Client = { id: string; name: string; phone: string; address?: Address; notes?:string; preferredProfessional?:string; version: number; createdAt?: string };
 export const attendanceLabels: Record<AttendanceMode, string> = {customer:'No endereço do cliente',business:'No estabelecimento',both:'Nos dois locais'};
 export const emptyAddress: Address = {street:'',number:'',neighborhood:'',city:'',state:'',postalCode:'',complement:''};
 const states = new Set('AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' '));
@@ -43,3 +43,4 @@ export function mapsDirectionsUrl(location: VisitLocation, address?: Address): s
   url.search = new URLSearchParams({api:'1',destination,travelmode:'driving',dir_action:'navigate'}).toString();
   return url.href.length <= 2048 ? url.href : null;
 }
+
