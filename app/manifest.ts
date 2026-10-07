@@ -1,3 +1,3 @@
 import type {MetadataRoute} from 'next';
 
-export default function manifest():MetadataRoute.Manifest{return {name:'Órbita — Gestão para barbearias',short_name:'Órbita',description:'Agenda, clientes e gestão da sua barbearia.',start_url:'/',display:'standalone',background_color:'#f6f8f4',theme_color:'#173e31',orientation:'portrait-primary',icons:[{src:'/favicon.svg',sizes:'any',type:'image/svg+xml',purpose:'any'}]}}
+export default function manifest():MetadataRoute.Manifest{return {name:'NAVALHY',short_name:'NAVALHY',description:'Agenda, clientes e gestão da sua barbearia.',start_url:'/',display:'standalone',background_color:'#f5f5f3',theme_color:'#303437',orientation:'portrait-primary',icons:[{src:'/navalhy-icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},{src:'/navalhy-icon-512.png',sizes:'512x512',type:'image/png',purpose:'maskable'}]}}
