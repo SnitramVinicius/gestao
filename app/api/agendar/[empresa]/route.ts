@@ -6,6 +6,15 @@ export const dynamic='force-dynamic';
 const companyId=(value:string)=>{if(value==='demo')return value;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new AppError(404,'Barbearia não encontrada.');return value;};
 const hash=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(24))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+const requestFingerprint=async(request:Request)=>hash(`${request.headers.get('x-nf-client-connection-ip')||request.headers.get('x-forwarded-for')?.split(',')[0]||'unknown'}|${request.headers.get('user-agent')||'unknown'}`);
+async function protectPublicRequest(request:Request,db:ReturnType<typeof adminClient>,tenant:string,payload:Record<string,unknown>){
+ if(text(payload.website,200))throw new AppError(400,'Não foi possível enviar esta solicitação.');
+ const started=Number(payload.startedAt),elapsed=Date.now()-started;if(!Number.isFinite(started)||elapsed<3000||elapsed>7200000)throw new AppError(400,'Atualize a página e preencha o formulário novamente.');
+ if(payload.consent!==true)throw new AppError(400,'Você precisa autorizar o uso do telefone para solicitar o horário.');
+ const fingerprint=await requestFingerprint(request),since=new Date(Date.now()-15*60000).toISOString(),attempts=await db.from('public_booking_attempts').select('id',{count:'exact',head:true}).eq('tenant',tenant).eq('fingerprint',fingerprint).gte('created_at',since);
+ if(attempts.error&&(attempts.error as {code?:string}).code!=='42P01')throw attempts.error;if((attempts.count??0)>=5)throw new AppError(429,'Muitas solicitações. Aguarde 15 minutos e tente novamente.');
+ return fingerprint;
+}
 const validDate=(value:unknown)=>{const date=text(value,10,true);if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date)throw new AppError(400,'Escolha uma data válida.');return date;};
 const validTime=(value:unknown)=>{const time=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new AppError(400,'Escolha um horário válido.');return time;};
 
@@ -23,8 +32,10 @@ export async function POST(request:Request,{params}:{params:Promise<{empresa:str
  mutationOrigin(request);const tenant=companyId((await params).empresa),payload=object(await readJson(request));if(tenant==='demo')return json({ok:true,id:crypto.randomUUID(),token:'demo-'+token(),message:'Horário solicitado na demonstração.'});const db=adminClient();
  const company=checked(await db.from('companies').select('id,name,version,settings').eq('id',tenant).maybeSingle());
  if(!company)throw new AppError(404,'Barbearia não encontrada.');
+ const fingerprint=await protectPublicRequest(request,db,tenant,payload);
  const settings=storedSettings(company.settings),name=text(payload.name,100,true),phone=text(payload.phone,20,true).replace(/\D/g,'');
  if(!/^\d{10,11}$/.test(phone))throw new AppError(400,'Informe um telefone com DDD.');
+ const phoneHash=await hash(phone),dayStart=new Date(Date.now()-24*60*60000).toISOString(),phoneAttempts=await db.from('public_booking_attempts').select('id',{count:'exact',head:true}).eq('tenant',tenant).eq('phone_hash',phoneHash).gte('created_at',dayStart);if(phoneAttempts.error&&(phoneAttempts.error as {code?:string}).code!=='42P01')throw phoneAttempts.error;if((phoneAttempts.count??0)>=10)throw new AppError(429,'Este telefone atingiu o limite diário de solicitações.');const attempt=await db.from('public_booking_attempts').insert({tenant,fingerprint,phone_hash:phoneHash});if(attempt.error&&(attempt.error as {code?:string}).code!=='42P01')throw attempt.error;
  if(!Array.isArray(payload.services)||payload.services.length<1||payload.services.length>10)throw new AppError(400,'Escolha pelo menos um serviço.');
  const ids=[...new Set(payload.services.map(value=>text(value,80,true)))],services=ids.map(id=>settings.services.find(service=>service.id===id&&service.active));
  if(services.some(service=>!service))throw new AppError(400,'Um dos serviços selecionados não está disponível.');
