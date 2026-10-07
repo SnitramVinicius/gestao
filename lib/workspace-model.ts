@@ -2,7 +2,7 @@ import type {CompanySettings} from './company-settings';
 import type {Address,AttendanceMode,Client,VisitLocation} from './customer-rules';
 export const orderStatuses=['Novo','Aguardando informações','Visita agendada','Em orçamento','Proposta enviada','Aprovado','Perdido','Concluído'] as const;
 export type OrderStatus=typeof orderStatuses[number];
-export type Company={id:string;name:string;mode:AttendanceMode;version:number;settings:CompanySettings;hasLogo:boolean};
+export type Company={id:string;name:string;slug?:string;mode:AttendanceMode;version:number;settings:CompanySettings;hasLogo:boolean};
 export type Order={id:string;customerId:string;service:string;description:string;measurements:string;responsible:string;address?:Address;status:OrderStatus;version:number;createdAt:string;updatedAt:string};
 export type Booking={id:string;client:string;date:string;time:string;duration:number;kind:string;professional?:string;location:VisitLocation;address?:Address;status:string;amount:number;paymentStatus:'Pendente'|'Pago';paymentMethod?:string;paidAt?:string;version:number};
 export type ClientPlan={id:string;customerId:string;serviceId:string;serviceName:string;includedUses:number;usedUses:number;renewsOn:string;active:boolean;version:number;createdAt:string};

@@ -28,9 +28,9 @@ export async function POST(request:Request,{params}:{params:Promise<{token:strin
  if(!access)throw new AppError(404,'Este acesso não está mais disponível.');
  const booking=checked(await db.from('bookings').select('id,status,version').eq('id',bookingId).eq('tenant',access.tenant).eq('professional_id',access.professional_id).maybeSingle());
  if(!booking)throw new AppError(404,'Agendamento não encontrado.');
- const status=action==='confirm'?'Confirmado':action==='refuse'?'Cancelado':action==='complete'?'Concluído':'';
+ const status=action==='confirm'?'Confirmado':action==='refuse'?'Cancelado':action==='complete'?'Concluído':action==='missed'?'Faltou':'';
  if(!status)throw new AppError(400,'Ação inválida.');
- if(status==='Confirmado'&&booking.status!=='Pendente'||status==='Concluído'&&booking.status!=='Confirmado'||status==='Cancelado'&&!['Pendente','Confirmado'].includes(booking.status))throw new AppError(400,'Este agendamento já foi alterado.');
+ if(status==='Confirmado'&&booking.status!=='Pendente'||['Concluído','Faltou'].includes(status)&&booking.status!=='Confirmado'||status==='Cancelado'&&!['Pendente','Confirmado'].includes(booking.status))throw new AppError(400,'Este agendamento já foi alterado.');
  changed(checked(await db.from('bookings').update({status,version:booking.version+1}).eq('id',booking.id).eq('version',booking.version).select('id')));
  return json({ok:true});
  }catch(error){return failure(error);}}

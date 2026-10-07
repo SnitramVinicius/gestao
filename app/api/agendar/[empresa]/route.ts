@@ -3,7 +3,8 @@ import {storedSettings,defaultSettings,businessDay,minute,professionalAvailable}
 import {AppError,mutationOrigin,object,text} from '@/lib/workspace-validation';
 
 export const dynamic='force-dynamic';
-const companyId=(value:string)=>{if(value==='demo')return value;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new AppError(404,'Barbearia não encontrada.');return value;};
+const companyKey=(value:string)=>{const key=value.toLowerCase();if(key==='demo'||/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)||/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key))return key;throw new AppError(404,'Barbearia não encontrada.');};
+const isUuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const hash=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(24))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
 const requestFingerprint=async(request:Request)=>hash(`${request.headers.get('x-nf-client-connection-ip')||request.headers.get('x-forwarded-for')?.split(',')[0]||'unknown'}|${request.headers.get('user-agent')||'unknown'}`);
@@ -19,19 +20,20 @@ const validDate=(value:unknown)=>{const date=text(value,10,true);if(!/^\d{4}-\d{
 const validTime=(value:unknown)=>{const time=text(value,5,true);if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new AppError(400,'Escolha um horário válido.');return time;};
 
 export async function GET(_request:Request,{params}:{params:Promise<{empresa:string}>}){try{
- const tenant=companyId((await params).empresa);if(tenant==='demo'){const settings=defaultSettings(),team=[{id:'barbeiro-joao',name:'João',role:'Barbeiro'},{id:'barbeiro-carlos',name:'Carlos',role:'Barbeiro'}];return json({company:{id:'demo',name:'Barbearia demonstração',timezone:settings.timezone,hours:settings.hours,services:settings.services,team},bookings:[]});}const db=adminClient();
- const company=checked(await db.from('companies').select('id,name,settings').eq('id',tenant).maybeSingle());
+ const key=companyKey((await params).empresa);if(key==='demo'){const settings=defaultSettings(),team=[{id:'barbeiro-joao',name:'João',role:'Barbeiro'},{id:'barbeiro-carlos',name:'Carlos',role:'Barbeiro'}];return json({company:{id:'demo',name:'Barbearia demonstração',address:{street:'Rua da Demonstração',number:'100',neighborhood:'Centro',city:'São Paulo',state:'SP'},hasLogo:false,timezone:settings.timezone,hours:settings.hours,services:settings.services,team},bookings:[]});}const db=adminClient();
+ const company=checked(await db.from('companies').select('id,name,settings,logo_key').eq(isUuid(key)?'id':'slug',key).maybeSingle());
  if(!company)throw new AppError(404,'Barbearia não encontrada.');
- const settings=storedSettings(company.settings);
+ const tenant=company.id,settings=storedSettings(company.settings);
  const from=new Date().toISOString().slice(0,10),until=new Date(Date.now()+60*86400000).toISOString().slice(0,10);
  const rows=checked(await db.from('bookings').select('date,time,duration,status,professional_id').eq('tenant',tenant).gte('date',from).lte('date',until).neq('status','Cancelado'));
- return json({company:{id:company.id,name:company.name,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel})),team:settings.team.filter(member=>member.active).map(({id,name,role,hours,blocks})=>({id,name,role,hours,blocks}))},bookings:rows.map(row=>({...row,professional:row.professional_id??undefined}))});
+ return json({company:{id:company.id,name:company.name,address:settings.address,phone:settings.phone,hasLogo:!!company.logo_key,timezone:settings.timezone,hours:settings.hours,services:settings.services.filter(service=>service.active).map(({id,name,description,duration,price,pricingModel})=>({id,name,description,duration,price,pricingModel})),team:settings.team.filter(member=>member.active).map(({id,name,role,hours,blocks})=>({id,name,role,hours,blocks}))},bookings:rows.map(row=>({...row,professional:row.professional_id??undefined}))});
  }catch(error){return failure(error);}}
 
 export async function POST(request:Request,{params}:{params:Promise<{empresa:string}>}){try{
- mutationOrigin(request);const tenant=companyId((await params).empresa),payload=object(await readJson(request));if(tenant==='demo')return json({ok:true,id:crypto.randomUUID(),token:'demo-'+token(),message:'Horário solicitado na demonstração.'});const db=adminClient();
- const company=checked(await db.from('companies').select('id,name,version,settings').eq('id',tenant).maybeSingle());
+ mutationOrigin(request);const key=companyKey((await params).empresa),payload=object(await readJson(request));if(key==='demo')return json({ok:true,id:crypto.randomUUID(),token:'demo-'+token(),message:'Horário solicitado na demonstração.'});const db=adminClient();
+ const company=checked(await db.from('companies').select('id,name,version,settings').eq(isUuid(key)?'id':'slug',key).maybeSingle());
  if(!company)throw new AppError(404,'Barbearia não encontrada.');
+ const tenant=company.id;
  const fingerprint=await protectPublicRequest(request,db,tenant,payload);
  const settings=storedSettings(company.settings),name=text(payload.name,100,true),phone=text(payload.phone,20,true).replace(/\D/g,'');
  if(!/^\d{10,11}$/.test(phone))throw new AppError(400,'Informe um telefone com DDD.');

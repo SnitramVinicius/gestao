@@ -4,7 +4,7 @@ import {validateSettings,configuredSchedule} from './company-validation.ts';
 import {object,text,version,mode,customer,address,orderStatus,imageMime,AppError} from './workspace-validation.ts';
 import {resolveVisit} from './customer-rules.ts';
 export function createDemo(){
- const data:Workspace={company:{id:'demo',name:'Minha barbearia',mode:'business',version:1,settings:defaultSettings(),hasLogo:false},clients:[],orders:[],bookings:[],plans:[],photos:[],audit:[]};
+ const data:Workspace={company:{id:'demo',name:'Minha barbearia',slug:'minha-barbearia',mode:'business',version:1,settings:defaultSettings(),hasLogo:false},clients:[],orders:[],bookings:[],plans:[],photos:[],audit:[]};
  const assets=new Map<string,string>();
  const fail=(message:string)=>{throw new Error(message);};
  const check=(record:{version:number}|undefined,v:unknown)=>{if(!record||record.version!==version(v))fail('Atualize os dados antes de salvar.');};
@@ -25,7 +25,7 @@ export function createDemo(){
  }
  if(path!=='/api/workspace')fail('Recurso indisponível na demonstração.');
  const input=object(JSON.parse(String(init?.body))),p=object(input.payload),op=input.operation,now=new Date().toISOString();let id=p.id?String(p.id):crypto.randomUUID();
- if(op==='saveCompany'){check(data.company,p.version);data.company={...data.company,name:text(p.name,100,true),mode:mode(p.mode),settings:validateSettings(p.settings),version:data.company.version+1};}
+ if(op==='saveCompany'){check(data.company,p.version);const name=text(p.name,100,true),slug=text(p.slug,60)||data.company.slug||name.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))fail('Use apenas letras minúsculas, números e hífens no link.');data.company={...data.company,name,slug,mode:mode(p.mode),settings:validateSettings(p.settings),version:data.company.version+1};}
  else if(op==='saveClient'){const c=customer(p,data.company.mode);const existing=data.clients.find(c=>c.id===id);if(p.id)check(existing,p.version);if(data.clients.some(c2=>c2.id!==id&&c2.phone===c.phone))fail('Já existe um cliente com esse telefone.');const next={...c,notes:String(p.notes||''),preferredProfessional:String(p.preferredProfessional||''),id,version:(existing?.version??0)+1,createdAt:existing?.createdAt??now};data.clients=existing?data.clients.map(c2=>c2.id===id?next:c2):[next,...data.clients];}
  else if(op==='deleteClient'){const existing=data.clients.find(c=>c.id===id);check(existing,p.version);const orderIds=data.orders.filter(item=>item.customerId===id).map(item=>item.id);data.photos=data.photos.filter(item=>!orderIds.includes(item.orderId));data.orders=data.orders.filter(item=>item.customerId!==id);data.bookings=data.bookings.filter(item=>item.client!==id);data.plans=data.plans.filter(item=>item.customerId!==id);data.clients=data.clients.filter(item=>item.id!==id);}
  else if(op==='saveOrder'){if(!data.clients.some(c=>c.id===p.customerId))fail('Cliente não encontrado.');const existing=data.orders.find(o=>o.id===id);if(p.id)check(existing,p.version);const next:Order={id,customerId:String(p.customerId),service:text(p.service,120,true),description:text(p.description,3000,true),measurements:text(p.measurements,1000),responsible:text(p.responsible,100),address:address(p.address,data.company.mode==='customer'),status:orderStatus(p.status),version:(existing?.version??0)+1,createdAt:existing?.createdAt??now,updatedAt:now};data.orders=existing?data.orders.map(o=>o.id===id?next:o):[next,...data.orders];}
@@ -36,7 +36,7 @@ export function createDemo(){
  else if(op==='useClientPlan'){const plan=data.plans.find(item=>item.id===id);check(plan,p.version);if(plan!.usedUses>=plan!.includedUses)fail('Este plano não possui usos disponíveis.');plan!.usedUses++;plan!.version++;}
  else if(op==='renewClientPlan'){const plan=data.plans.find(item=>item.id===id);check(plan,p.version);plan!.usedUses=0;plan!.renewsOn=String(p.renewsOn);plan!.active=true;plan!.version++;}
  else if(op==='setBookingPayment'){const b=data.bookings.find(b=>b.id===id);check(b,p.version);b!.amount=Number(p.amount);b!.paymentStatus='Pago';b!.paymentMethod=String(p.method);b!.paidAt=now;b!.version++;}
- else if(op==='setBookingStatus'){const b=data.bookings.find(b=>b.id===id);check(b,p.version);const status=String(p.status);if(!(b!.status==='Pendente'&&['Confirmado','Cancelado'].includes(status)||b!.status==='Confirmado'&&['Concluído','Cancelado'].includes(status)))fail('Alteração de status inválida.');b!.status=status;b!.version++;}
+ else if(op==='setBookingStatus'){const b=data.bookings.find(b=>b.id===id);check(b,p.version);const status=String(p.status);if(!(b!.status==='Pendente'&&['Confirmado','Cancelado'].includes(status)||b!.status==='Confirmado'&&['Concluído','Cancelado','Faltou'].includes(status)))fail('Alteração de status inválida.');b!.status=status;b!.version++;}
  else fail('Operação indisponível.');
  data.audit.unshift({id:data.audit.length+1,entity:'Demonstração',entityId:id,action:'Alteração temporária',createdAt:now});
  return Response.json({ok:true,id});
