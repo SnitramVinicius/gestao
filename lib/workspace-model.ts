@@ -5,8 +5,7 @@ export type OrderStatus=typeof orderStatuses[number];
 export type Company={id:string;name:string;mode:AttendanceMode;version:number;settings:CompanySettings;hasLogo:boolean};
 export type Order={id:string;customerId:string;service:string;description:string;measurements:string;responsible:string;address?:Address;status:OrderStatus;version:number;createdAt:string;updatedAt:string};
 export type Booking={id:string;client:string;date:string;time:string;duration:number;kind:string;professional?:string;location:VisitLocation;address?:Address;status:string;amount:number;paymentStatus:'Pendente'|'Pago';paymentMethod?:string;paidAt?:string;version:number};
+export type ClientPlan={id:string;customerId:string;serviceId:string;serviceName:string;includedUses:number;usedUses:number;renewsOn:string;active:boolean;version:number;createdAt:string};
 export type Photo={id:string;orderId:string;name:string;mime:string;size:number};
 export type Audit={id:number;entity:string;entityId:string;action:string;createdAt:string};
-export type Workspace={company:Company;clients:Client[];orders:Order[];bookings:Booking[];photos:Photo[];audit:Audit[]};
-
-
+export type Workspace={company:Company;clients:Client[];orders:Order[];bookings:Booking[];plans:ClientPlan[];photos:Photo[];audit:Audit[]};
